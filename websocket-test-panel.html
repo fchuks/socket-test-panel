@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Call Test Client</title>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #statusArea {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .status-msg {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .error { color: #d32f2f; }
+        .success { color: #388e3c; }
+        .info { color: #1976d2; }
+        .video-container {
+            display: flex;
+            margin-top: 20px;
+        }
+        .video-box {
+            flex: 1;
+            margin: 0 5px;
+            text-align: center;
+        }
+        video {
+            width: 100%;
+            max-width: 400px;
+            background-color: #000;
+            border-radius: 4px;
+        }
+        .hidden {
+            display: none;
+        }
+        .call-controls {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .call-controls button {
+            margin: 0 5px;
+        }
+        #endCallBtn {
+            background-color: #d32f2f;
+        }
+        #rejectCallBtn {
+            background-color: #d32f2f;
+        }
+        #acceptCallBtn {
+            background-color: #4CAF50;
+        }
+        .active-stream {
+            border: 3px solid #4CAF50 !important;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        .screen-share {
+            width: 100%;
+            margin-top: 10px;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .screen-share video {
+            max-width: 800px;
+            width: 100%;
+            background-color: #000;
+            min-height: 300px;
+            border: 2px solid #ff0000;
+        }
+        .screen-share p {
+            font-weight: bold;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Personal Call Test Client</h1>
+        
+        <div class="form-group">
+            <label for="tokenInput">JWT Token:</label>
+            <input type="text" id="tokenInput" placeholder="Paste your JWT token here" />
+        </div>
+        
+        <div class="form-group">
+            <label for="senderEmail">Your Email:</label>
+            <input type="email" id="senderEmail" placeholder="your.email@example.com" />
+        </div>
+        
+        <div id="connectionSection">
+            <button id="connectBtn">Connect to WebSocket</button>
+            <div id="connectionStatus" class="status-msg"></div>
+        </div>
+        
+        <div id="callSection" class="hidden">
+            <h2>Make a Call</h2>
+            <div class="form-group">
+                <label for="receiverEmail">Recipient Email:</label>
+                <input type="email" id="receiverEmail" placeholder="recipient.email@example.com" />
+            </div>
+            
+            <div class="form-group">
+                <label for="callType">Call Type:</label>
+                <select id="callType">
+                    <option value="VIDEO">Video Call</option>
+                    <option value="AUDIO">Audio Call</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="isClientVendorCall"> 
+                    This is a Client-Vendor call
+                </label>
+            </div>
+
+            <div id="locationEmailContainer" class="form-group hidden">
+                <label for="locationEmail">Location Email:</label>
+                <input type="email" id="locationEmail" placeholder="location.email@company.com" />
+                <small>The email identity to use when communicating with vendors</small>
+            </div>
+            
+            <button id="initiateCallBtn">Initiate Call</button>
+        </div>
+        
+        <div id="incomingCallSection" class="hidden">
+            <h2>Incoming Call</h2>
+            <div id="callerInfo" class="status-msg"></div>
+
+            <div id="locationAcceptContainer" class="form-group hidden">
+                <label>
+                    <input type="checkbox" id="acceptAsLocation"> 
+                    Accept as location
+                </label>
+                <div id="acceptLocationEmailContainer" class="form-group hidden">
+                    <label for="acceptLocationEmail">Location Email:</label>
+                    <input type="email" id="acceptLocationEmail" placeholder="location.email@company.com" />
+                </div>
+            </div>
+
+            <div class="call-controls">
+                <button id="acceptCallBtn">Accept</button>
+                <button id="rejectCallBtn">Reject</button>
+            </div>
+        </div>
+        
+        <div id="callInProgressSection" class="hidden">
+            <h2>Call in Progress</h2>
+            <div id="callTimer" class="status-msg">00:00</div>
+            
+            <div class="video-container">
+                <div class="video-box">
+                    <p>Local Video</p>
+                    <video id="localVideo" autoplay muted></video>
+                </div>
+                <div class="video-box">
+                    <p>Remote Video</p>
+                    <video id="remoteVideo" autoplay></video>
+                </div>
+                <div class="video-box screen-share hidden">
+                    <p>Screen Share from: <span id="screenShareUser">Participant</span></p>
+                    <video id="screenShareVideo" autoplay muted playsinline ></video>
+                </div>
+                <div id="screenShareDebug" style="margin-top: 10px;">
+                    <button id="debugPlayBtn" style="background-color: #ff9800;">Force Play Screen</button>
+                    <div id="screenInfo" class="status-msg"></div>
+                </div>
+            </div>
+            
+            <div class="call-controls">
+                <button id="toggleAudioBtn">Mute</button>
+                <button id="toggleVideoBtn">Hide Video</button>
+                <button id="upgradeToVideoBtn" class="hidden">Upgrade to Video</button>
+                <button id="shareScreenBtn">Share Screen</button>
+                <button id="stopScreenShareBtn" class="hidden">Stop Sharing</button>
+                <button id="endCallBtn">End Call</button>
+            </div>
+        </div>
+        
+        
+        <h2>Event Log</h2>
+        <div id="statusArea"></div>
+    </div>
+
+    <script>
+        // App state
+        const state = {
+            socket: null,
+            peer: null,
+            call: null,
+            localStream: null,
+            remoteStream: null,
+            peerId: null,
+            currentCall: {
+                sessionId: null,
+                caller: null,
+                receiver: null,
+                startTime: null,
+                isClientVendorCall: false,
+                locationEmail: null
+            },
+            timer: null,
+            peerConnections: {}
+        };
+
+        // DOM Elements
+        const elements = {
+            tokenInput: document.getElementById('tokenInput'),
+            senderEmail: document.getElementById('senderEmail'),
+            connectBtn: document.getElementById('connectBtn'),
+            connectionStatus: document.getElementById('connectionStatus'),
+            callSection: document.getElementById('callSection'),
+            receiverEmail: document.getElementById('receiverEmail'),
+            callType: document.getElementById('callType'),
+            initiateCallBtn: document.getElementById('initiateCallBtn'),
+            incomingCallSection: document.getElementById('incomingCallSection'),
+            callerInfo: document.getElementById('callerInfo'),
+            acceptCallBtn: document.getElementById('acceptCallBtn'),
+            rejectCallBtn: document.getElementById('rejectCallBtn'),
+            callInProgressSection: document.getElementById('callInProgressSection'),
+            callTimer: document.getElementById('callTimer'),
+            localVideo: document.getElementById('localVideo'),
+            remoteVideo: document.getElementById('remoteVideo'),
+            toggleAudioBtn: document.getElementById('toggleAudioBtn'),
+            toggleVideoBtn: document.getElementById('toggleVideoBtn'),
+            upgradeToVideoBtn: document.getElementById('upgradeToVideoBtn'),
+            shareScreenBtn: document.getElementById('shareScreenBtn'),
+            stopScreenShareBtn: document.getElementById('stopScreenShareBtn'),
+            screenShareVideo: document.getElementById('screenShareVideo'),
+            endCallBtn: document.getElementById('endCallBtn'),
+            statusArea: document.getElementById('statusArea'),
+            isClientVendorCall: document.getElementById('isClientVendorCall'),
+            locationEmail: document.getElementById('locationEmail'),
+            locationEmailContainer: document.getElementById('locationEmailContainer'),
+            acceptAsLocation: document.getElementById('acceptAsLocation'),
+            acceptLocationEmail: document.getElementById('acceptLocationEmail'),
+            acceptLocationEmailContainer: document.getElementById('acceptLocationEmailContainer'),
+            locationAcceptContainer: document.getElementById('locationAcceptContainer'),
+
+        };
+
+        // Event constants
+        const EVENTS = {
+            PERSONAL_CALL: {
+                CLIENT: {
+                    INITIATE_CALL: 'gateway/communication-service/pc/initiate-call',
+                    ACCEPT_CALL: 'gateway/communication-service/pc/accept-call',
+                    REJECT_CALL: 'gateway/communication-service/pc/reject-call',
+                    END_CALL: 'gateway/communication-service/pc/end-call',
+                    UPDATE_MEDIA_STATE: 'gateway/communication-service/pc/update-media-state',
+                    UPGRADE_CALL_TYPE: 'gateway/communication-service/pc/upgrade-call-type',
+                    START_SCREEN_SHARE: 'gateway/communication-service/pc/start-screen-share',
+                    STOP_SCREEN_SHARE: 'gateway/communication-service/pc/stop-screen-share',
+                },
+                SERVER: {
+                    CALL_INCOMING: 'personal-call/incoming',
+                    CALL_ACCEPTED: 'personal-call/accepted',
+                    CALL_REJECTED: 'personal-call/rejected',
+                    CALL_ENDED: 'personal-call/ended',
+                    MEDIA_STATE_CHANGED: 'personal-call/media-state-changed',
+                    CALL_TYPE_CHANGED: 'personal-call/call-type-changed',
+                    SCREEN_SHARE_STARTED: 'personal-call/screen-share-started',
+                    SCREEN_SHARE_STOPPED: 'personal-call/screen-share-stopped',
+                },
+            },
+        };
+
+        // Toggle location email field visibility
+        elements.isClientVendorCall.addEventListener('change', function() {
+            elements.locationEmailContainer.classList.toggle('hidden', !this.checked);
+        });
+
+        // Toggle accept location email field visibility
+        elements.acceptAsLocation.addEventListener('change', function() {
+            elements.acceptLocationEmailContainer.classList.toggle('hidden', !this.checked);
+        });
+
+        // Helper functions
+        function addStatusMessage(message, type = 'info') {
+            const messageElement = document.createElement('div');
+            messageElement.className = `status-msg ${type}`;
+            messageElement.innerText = message;
+            elements.statusArea.prepend(messageElement);
+        }
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            let seconds = 0;
+            state.timer = setInterval(() => {
+                seconds++;
+                elements.callTimer.innerText = formatTime(seconds);
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (state.timer) {
+                clearInterval(state.timer);
+                state.timer = null;
+            }
+        }
+
+        // Screen share state
+        let screenStream = null;
+        let screenSharePeer = null;
+
+        function resetCallState() {
+            state.currentCall = {
+                sessionId: null,
+                caller: null,
+                receiver: null,
+                startTime: null,
+                callType: null,
+                isClientVendorCall: false,
+                locationEmail: null
+            };
+            
+            elements.callSection.classList.remove('hidden');
+            elements.incomingCallSection.classList.add('hidden');
+            elements.callInProgressSection.classList.add('hidden');
+            elements.upgradeToVideoBtn.classList.add('hidden');
+            
+            stopTimer();
+            elements.callTimer.innerText = '00:00';
+            
+            // Close video streams
+            if (state.localStream) {
+                state.localStream.getTracks().forEach(track => track.stop());
+                state.localStream = null;
+            }
+            
+            elements.localVideo.srcObject = null;
+            elements.remoteVideo.srcObject = null;
+
+            // Reset screen sharing
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+            }
+            
+            if (screenSharePeer) {
+                screenSharePeer.close();
+                screenSharePeer = null;
+            }
+            
+            elements.screenShareVideo.srcObject = null;
+            document.querySelector('.screen-share').classList.add('hidden');
+            elements.shareScreenBtn.classList.remove('hidden');
+            elements.stopScreenShareBtn.classList.add('hidden');
+        }
+
+        // Initialize PeerJS
+        function initializePeer() {
+            if (state.peer) {
+                addStatusMessage('PeerJS already initialized', 'info');
+                return;
+            }
+            state.peerId = `${elements.senderEmail.value.replace(/[@.]/g, '_')}_${Date.now()}`;
+            
+            state.peer = new Peer(state.peerId, {
+                host: 'peer-server.mapis4u.com',
+                //port: 9000,
+                path: '/peerjs',
+                debug: 3,
+                secure: true,
+                config: { // Added ICE server configuration
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' }
+                    ]
+                }
+            });
+            
+            let peerOpenHandled = false;
+                state.peer.on('open', (id) => {
+                    if (!peerOpenHandled) {
+                        peerOpenHandled = true;
+                        addStatusMessage(`PeerJS connected with ID: ${id}`, 'success');
+                    }
+                });
+            
+            // Handle connection error
+            state.peer.on('error', (error) => {
+                addStatusMessage(`PeerJS error: ${error.type} - ${error.message}`, 'error');
+                
+                if (error.type === 'network') {
+                    setTimeout(() => {
+                        addStatusMessage('Attempting to reconnect to PeerJS server...', 'info');
+                        state.peer.reconnect();
+                    }, 5000);
+                }
+            });
+
+            // Handle disconnection
+            state.peer.on('disconnected', () => {
+                addStatusMessage('Disconnected from PeerJS server. Attempting to reconnect...', 'info');
+                state.peer.reconnect();
+            });
+            
+            state.peer.on('call', (call) => {
+                // Store the call object for later reference
+                state.call = call;
+
+                // Check if this is a screen share
+                const isScreenShare = call.metadata && call.metadata.type === 'screen';
+                addStatusMessage(`Incoming peer call: ${isScreenShare ? 'SCREEN SHARE' : 'REGULAR CALL'} from: ${call.peer}`, 'info');                           
+              
+
+                if (isScreenShare) {
+                    call.answer(); // Don't send any stream back for screen shares
+                    call.on('stream', (remoteStream) => {
+                        addStatusMessage('Received screen share stream from peer', 'success');
+                        
+                        // Detailed debugging
+                        const videoTracks = remoteStream.getVideoTracks();
+                        addStatusMessage(`Screen share stream has ${videoTracks.length} video tracks`, 'info');
+                        
+                        if (videoTracks.length > 0) {
+                            const track = videoTracks[0];
+                            const settings = videoTracks[0].getSettings();
+                            addStatusMessage(`Track settings: width=${settings.width}, height=${settings.height}`, 'info');
+
+                            track.enabled = true;
+                        }
+                        
+                        // Force clean any existing stream
+                        if (elements.screenShareVideo.srcObject) {
+                            elements.screenShareVideo.srcObject.getTracks().forEach(track => track.stop());
+                            elements.screenShareVideo.srcObject = null;
+                        }
+                        
+                        // Set new stream with a small delay to ensure DOM is ready
+                        setTimeout(() => {
+                            elements.screenShareVideo.srcObject = remoteStream;
+
+                            elements.screenShareVideo.setAttribute('autoplay', 'true');
+                            elements.screenShareVideo.setAttribute('playsinline', 'true');
+                            
+                            // Force play and handle errors
+                            elements.screenShareVideo.play()
+                                .then(() => {
+                                    addStatusMessage('Screen share video playing successfully', 'success');
+                                    elements.screenShareVideo.classList.add('active-stream');
+                                })
+                                .catch(e => {
+                                    addStatusMessage(`Error playing screen share: ${e.message}`, 'error');
+                                    // Try to play it after user interaction
+                                    document.querySelector('.screen-share').innerHTML += 
+                                        '<button onclick="document.getElementById(\'screenShareVideo\').play()">Click to Play Screen</button>';
+                                });
+                            
+                            // Make container visible
+                            // Make container visible with explicit styling
+                            const screenShareContainer = document.querySelector('.screen-share');
+                            screenShareContainer.classList.remove('hidden');
+                            screenShareContainer.style.display = 'block';
+                            elements.screenShareVideo.style.display = 'block';
+                            
+                            // Add visual indication
+                            elements.screenShareVideo.classList.add('active-stream');
+                            
+                            // Update user info
+                            if (call.metadata && call.metadata.sender) {
+                                document.getElementById('screenShareUser').textContent = call.metadata.sender;
+                            }
+                        }, 100);
+                    });
+                    
+                    call.on('close', () => {
+                        addStatusMessage('Screen share call closed', 'info');
+                        document.querySelector('.screen-share').classList.add('hidden');
+                        elements.screenShareVideo.srcObject = null;
+                    });
+                    
+                    call.on('error', (err) => {
+                        addStatusMessage(`Screen share call error: ${err}`, 'error');
+                    });
+                }
+                else {
+                    // Regular call handling
+                    state.call = call;
+                    // Answer the call with the local stream
+                    if (state.localStream) {
+                        call.answer(state.localStream);
+                        call.on('stream', (remoteStream) => {
+                            addStatusMessage('Received remote stream from peer', 'success');
+                            elements.remoteVideo.srcObject = remoteStream;
+                            state.remoteStream = remoteStream;
+                        });
+                        
+                        call.on('close', () => {
+                            addStatusMessage('Peer call closed', 'info');
+                        });
+                        
+                        call.on('error', (err) => {
+                            addStatusMessage(`Peer call error: ${err}`, 'error');
+                        });
+                    } else {
+                        addStatusMessage('No local stream to answer call with', 'error');
+                    }
+                }
+            });
+        }
+        let isInitialized = false;
+
+        // Socket connection
+        elements.connectBtn.addEventListener('click', () => {
+
+            if (isInitialized) {
+                addStatusMessage('Already connected', 'info');
+                return;
+            }
+            const token = elements.tokenInput.value.trim();
+            const email = elements.senderEmail.value.trim();
+            
+            if (!token) {
+                addStatusMessage('Please enter a JWT token', 'error');
+                return;
+            }
+            
+            if (!email) {
+                addStatusMessage('Please enter your email', 'error');
+                return;
+            }
+            
+            try {
+                isInitialized = true;
+                // Format token correctly - remove Bearer prefix if present
+                const cleanToken = token.startsWith('Bearer ') ? token.substring(7) : token;
+                
+                console.log('Preparing connection with token:', cleanToken.substring(0, 15) + '...');
+                
+        // Create socket connection only once
+        if (!state.socket) {
+            state.socket = io('https://map-api.mapis4u.com/gw-call', {
+                auth: { token: cleanToken },
+                extraHeaders: {
+                    Authorization: `${cleanToken}`
+                }
+            });
+               
+                
+                state.socket.on('connect', () => {
+                    addStatusMessage('Connected to WebSocket', 'success');
+                    elements.connectionStatus.innerText = 'Connected';
+                    elements.connectionStatus.className = 'status-msg success';
+                    elements.connectBtn.disabled = true;
+                    elements.callSection.classList.remove('hidden');
+                    
+                    // Initialize PeerJS only after socket connection
+                    if (!state.peer) {
+                        initializePeer();
+                    }
+                });
+                
+                state.socket.on('connect_error', (error) => {
+                    addStatusMessage(`Connection error: ${error.message}`, 'error');
+                    elements.connectionStatus.innerText = `Connection failed: ${error.message}`;
+                    elements.connectionStatus.className = 'status-msg error';
+                });
+                
+                state.socket.on('disconnect', (reason) => {
+                    addStatusMessage(`Disconnected: ${reason}`, 'error');
+                    elements.connectionStatus.innerText = `Disconnected: ${reason}`;
+                    elements.connectionStatus.className = 'status-msg error';
+                    elements.connectBtn.disabled = false;
+                    elements.callSection.classList.add('hidden');
+                });
+                
+                // Call event handlers
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.CALL_INCOMING, (data) => {
+                    addStatusMessage(`Incoming call from ${data.caller}`, 'info');
+
+                    // Check if this is potentially a vendor-to-location call
+                    const isLocationCall = data.metadata && data.metadata.isVendorToLocationCall;
+                    
+                    state.currentCall = {
+                        sessionId: data.sessionId,
+                        caller: data.caller,
+                        peerId: data.peerId,
+                        callType: data.callType,
+                        isClientVendorCall: data.metadata?.isClientVendorCall || false,
+                        locationEmail: data.metadata?.locationEmail
+                    };
+                    
+                    elements.callerInfo.innerText = `Incoming ${data.callType} call from ${data.caller}`;
+
+                    // If this appears to be a call to a location, show location acceptance options
+                    elements.locationAcceptContainer.classList.toggle('hidden', !isLocationCall);
+
+                    elements.incomingCallSection.classList.remove('hidden');
+                    elements.callSection.classList.add('hidden');
+                });
+                
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.CALL_ACCEPTED, (data) => {
+                    addStatusMessage(`Call accepted by ${data.acceptedBy}`, 'success');
+                    
+                    // Start the peer connection
+                    if (state.localStream && data.peerId) {
+                        const call = state.peer.call(data.peerId, state.localStream);
+                        call.on('stream', (remoteStream) => {
+                            elements.remoteVideo.srcObject = remoteStream;
+                            state.remoteStream = remoteStream;
+                        });
+                    }
+                    
+                    // Start timer
+                    startTimer();
+                });
+                
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.CALL_REJECTED, (data) => {
+                    addStatusMessage(`Call rejected by ${data.rejectedBy}: ${data.reason || 'No reason provided'}`, 'error');
+                    resetCallState();
+                });
+                
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.CALL_ENDED, (data) => {
+                    addStatusMessage(`Call ended by ${data.endedBy}`, 'info');
+                    resetCallState();
+                });
+
+                // Handle screen share events from server
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.SCREEN_SHARE_STARTED, (data) => {
+                    if (data.sharedBy !== elements.senderEmail.value) {
+                        addStatusMessage(`${data.sharedBy} started sharing their screen (ID: ${data.screenShareId})`, 'info');
+                        
+                        // Force screen share container to be visible
+                        const screenShareContainer = document.querySelector('.screen-share');
+                        screenShareContainer.classList.remove('hidden');
+                        screenShareContainer.style.display = 'block';
+                        
+                        // Set user name
+                        document.getElementById('screenShareUser').textContent = data.sharedBy;
+                        
+                        addStatusMessage('Screen share container is now visible, waiting for stream...', 'success');
+                    }
+                });
+
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.SCREEN_SHARE_STOPPED, (data) => {
+                    if (data.sharedBy !== elements.senderEmail.value) {
+                        addStatusMessage(`${data.sharedBy} stopped sharing their screen`, 'info');
+
+                        // Hide the screen share container
+                        document.querySelector('.screen-share').classList.add('hidden');
+                        elements.screenShareVideo.srcObject = null;
+                        elements.screenShareVideo.classList.remove('active-stream');
+                    }
+                });
+
+                // Media state change event handler
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.MEDIA_STATE_CHANGED, (data) => {
+                    if (data.userEmail !== elements.senderEmail.value) {
+                        // Update UI based on remote user's media state
+                        const mediaState = data.mediaState;
+                        
+                        if (mediaState.audio !== undefined) {
+                            addStatusMessage(`Remote user ${mediaState.audio ? 'unmuted' : 'muted'} their microphone`, 'info');
+                        }
+                        
+                        if (mediaState.video !== undefined) {
+                            addStatusMessage(`Remote user ${mediaState.video ? 'enabled' : 'disabled'} their camera`, 'info');
+                        }
+                    }
+                });
+
+                // Call type change event handler
+                state.socket.on(EVENTS.PERSONAL_CALL.SERVER.CALL_TYPE_CHANGED, async (data) => {
+                    addStatusMessage(`Call type changed from ${data.previousCallType} to ${data.newCallType}`, 'info');
+                    
+                    if (data.newCallType === 'VIDEO' && data.changedBy !== elements.senderEmail.value) {
+                        // Show notification when remote user upgrades to video
+                        addStatusMessage('Call upgraded to video by other participant. You can now enable your camera.', 'info');
+                        
+                        try {
+                            // Automatically acquire camera permissions when call is upgraded to video
+                            const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                            const videoTrack = videoStream.getVideoTracks()[0];
+                            const audioTrack = state.localStream.getAudioTracks()[0];
+                            
+                            // Add video track to existing stream
+                            if (state.localStream) {
+                                state.localStream.addTrack(videoTrack);
+                                
+                                // Default to video enabled
+                                videoTrack.enabled = true;
+                                
+                                // Update local video element
+                                elements.localVideo.srcObject = state.localStream;
+                                
+                                // For the recipient of the upgrade, we need to recreate the call
+                                // to ensure proper WebRTC renegotiation
+                                if (state.peer && state.currentCall.caller !== elements.senderEmail.value) {
+                                    addStatusMessage('Recreating peer connection as call recipient', 'info');
+                                    
+                                    // Close any existing call
+                                    if (state.call) {
+                                        state.call.close();
+                                    }
+                                    
+                                    // For PeerJS, we need to answer again with the new stream
+                                    state.peer.on('call', (call) => {
+                                        addStatusMessage('Received upgraded call from initiator', 'info');
+                                        call.answer(state.localStream);
+                                        state.call = call;
+                                        
+                                        call.on('stream', (remoteStream) => {
+                                            addStatusMessage('Received remote video stream', 'success');
+                                            elements.remoteVideo.srcObject = remoteStream;
+                                            state.remoteStream = remoteStream;
+                                        });
+                                    });
+                                    
+                                    // Also proactively call the initiator to ensure connection
+                                    const call = state.peer.call(state.currentCall.peerId, state.localStream);
+                                    call.on('stream', (remoteStream) => {
+                                        elements.remoteVideo.srcObject = remoteStream;
+                                        state.remoteStream = remoteStream;
+                                    });
+                                }
+                                
+                                // Update UI
+                                elements.toggleVideoBtn.innerText = 'Hide Video';
+                                elements.toggleVideoBtn.classList.remove('hidden');
+                                elements.upgradeToVideoBtn.classList.add('hidden');
+                                
+                                // Update call state
+                                state.currentCall.callType = 'VIDEO';
+                                
+                                // Send media state update to notify the other party
+                                state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.UPDATE_MEDIA_STATE, {
+                                    sessionId: state.currentCall.sessionId,
+                                    senderEmail: elements.senderEmail.value,
+                                    receiverEmail: state.currentCall.caller === elements.senderEmail.value ? 
+                                        state.currentCall.receiver : state.currentCall.caller,
+                                    mediaState: {
+                                        audio: audioTrack ? audioTrack.enabled : true,
+                                        video: true
+                                    }
+                                }, (response) => {
+                                    if (response.status === 'success') {
+                                        addStatusMessage('Video state updated on server', 'success');
+                                    }
+                                });
+                            }
+                        } catch (error) {
+                            addStatusMessage(`Failed to enable camera: ${error.message}`, 'error');
+                            
+                            // Still update UI elements in case user wants to try manually
+                            elements.toggleVideoBtn.classList.remove('hidden');
+                            elements.upgradeToVideoBtn.classList.add('hidden');
+                            state.currentCall.callType = 'VIDEO';
+                        }
+                    }
+                });
+            }  
+            } catch (error) {
+                isInitialized = false;
+                addStatusMessage(`Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Initiate Call
+        elements.initiateCallBtn.addEventListener('click', async () => {
+            const receiverEmail = elements.receiverEmail.value.trim();
+            const callType = elements.callType.value;
+            const isClientVendorCall = elements.isClientVendorCall.checked;
+            const locationEmail = elements.locationEmail.value.trim();
+            
+            if (!receiverEmail) {
+                addStatusMessage('Please enter recipient email', 'error');
+                return;
+            }
+
+            // Validate location email if this is a client-vendor call
+            if (isClientVendorCall && !locationEmail) {
+                addStatusMessage('Please enter location email for client-vendor call', 'error');
+                return;
+            }
+            
+            try {
+                // Get media stream
+                state.localStream = await navigator.mediaDevices.getUserMedia({
+                    video: callType === 'VIDEO',
+                    audio: true
+                });
+                
+                elements.localVideo.srcObject = state.localStream;
+                
+                const callData = {
+                    senderEmail: isClientVendorCall ? locationEmail : elements.senderEmail.value,
+                    receiverEmail: receiverEmail,
+                    peerId: state.peerId,
+                    callType: callType,
+                    isClientVendorCall: isClientVendorCall,
+                    locationEmail: isClientVendorCall ? locationEmail : undefined,
+                    metadata: {
+                        audio: true,
+                        video: callType === 'VIDEO',
+                        browser: navigator.userAgent
+                    }
+                };
+                
+                addStatusMessage(`Initiating ${isClientVendorCall ? 'client-vendor' : 'regular'} call...`, 'info');
+                
+                
+                // Send call request
+                state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.INITIATE_CALL, callData, (response) => {
+                    if (response.status === 'success') {
+                        addStatusMessage(`Call initiated with ID: ${response.sessionId}`, 'success');
+                        
+                        state.currentCall = {
+                            sessionId: response.sessionId,
+                            caller: isClientVendorCall ? locationEmail : elements.senderEmail.value,
+                            receiver: receiverEmail,
+                            startTime: new Date(),
+                            callType: callType,
+                            isClientVendorCall: isClientVendorCall,
+                            locationEmail: isClientVendorCall ? locationEmail : null
+                        };
+                        
+                        elements.callInProgressSection.classList.remove('hidden');
+                        elements.callSection.classList.add('hidden');
+
+                        // Show/hide upgrade button based on call type
+                        if (callType === 'AUDIO') {
+                            elements.upgradeToVideoBtn.classList.remove('hidden');
+                            elements.toggleVideoBtn.classList.add('hidden');
+                        } else {
+                            elements.upgradeToVideoBtn.classList.add('hidden');
+                            elements.toggleVideoBtn.classList.remove('hidden');
+                        }
+                    } else {
+                        addStatusMessage(`Failed to initiate call: ${response.message}`, 'error');
+                    }
+                });
+                
+            } catch (error) {
+                addStatusMessage(`Media error: ${error.message}`, 'error');
+            }
+        });
+
+        // Accept Call
+        elements.acceptCallBtn.addEventListener('click', async () => {
+            try {
+                // Get media stream
+                state.localStream = await navigator.mediaDevices.getUserMedia({
+                    video: state.currentCall.callType === 'VIDEO',
+                    audio: true
+                });
+                
+                elements.localVideo.srcObject = state.localStream;
+                
+                // Generate peer ID if not exists
+                if (!state.peer) {
+                    initializePeer();
+                }
+
+                const acceptingAsLocation = elements.acceptAsLocation && elements.acceptAsLocation.checked;
+                const acceptLocationEmail = elements.acceptLocationEmail.value.trim();
+                
+                // Validate location email if accepting as location
+                if (acceptingAsLocation && !acceptLocationEmail) {
+                    addStatusMessage('Please enter location email to accept call as location', 'error');
+                    return;
+                }
+                
+                const acceptData = {
+                    sessionId: state.currentCall.sessionId,
+                    senderEmail: elements.senderEmail.value,
+                    receiverEmail: state.currentCall.caller,
+                    peerId: state.peerId
+                };
+
+                // Add location acceptance info if needed
+                if (acceptingAsLocation) {
+                    acceptData.acceptingForLocation = acceptLocationEmail;
+                }
+                
+                // Send accept request
+                state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.ACCEPT_CALL, acceptData, (response) => {
+                    if (response.status === 'success') {
+                        addStatusMessage(`Call accepted ${acceptingAsLocation ? 'as location ' + acceptLocationEmail : ''}`, 'success');
+                        elements.incomingCallSection.classList.add('hidden');
+                        elements.callInProgressSection.classList.remove('hidden');
+
+                        // Show/hide upgrade button based on call type
+                        if (state.currentCall.callType === 'AUDIO') {
+                            elements.upgradeToVideoBtn.classList.remove('hidden');
+                            elements.toggleVideoBtn.classList.add('hidden');
+                        } else {
+                            elements.upgradeToVideoBtn.classList.add('hidden');
+                            elements.toggleVideoBtn.classList.remove('hidden');
+                        }
+                        
+                        // Start timer
+                        startTimer();
+                    } else {
+                        addStatusMessage(`Failed to accept call: ${response.message}`, 'error');
+                    }
+                });
+                
+            } catch (error) {
+                addStatusMessage(`Media error: ${error.message}`, 'error');
+            }
+        });
+
+        // Reject Call
+        elements.rejectCallBtn.addEventListener('click', () => {
+            const rejectData = {
+                sessionId: state.currentCall.sessionId,
+                senderEmail: elements.senderEmail.value,
+                receiverEmail: state.currentCall.caller,
+                reason: 'Call rejected by user'
+            };
+            
+            state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.REJECT_CALL, rejectData, (response) => {
+                if (response.status === 'success') {
+                    addStatusMessage('Call rejected', 'info');
+                    resetCallState();
+                } else {
+                    addStatusMessage(`Failed to reject call: ${response.message}`, 'error');
+                }
+            });
+        });
+
+        // End Call
+        elements.endCallBtn.addEventListener('click', () => {
+            if (!state.currentCall.sessionId) {
+                addStatusMessage('No active call to end', 'error');
+                return;
+            }
+            
+            const duration = state.timer ? parseInt(elements.callTimer.innerText.split(':')[0]) * 60 + 
+                parseInt(elements.callTimer.innerText.split(':')[1]) : 0;
+            
+            const endData = {
+                sessionId: state.currentCall.sessionId,
+                senderEmail: elements.senderEmail.value,
+                receiverEmail: state.currentCall.receiver || state.currentCall.caller,
+                metadata: {
+                    connectionInfo: {
+                        duration: duration,
+                        startTime: state.currentCall.startTime?.toISOString(),
+                        reconnections: 0
+                    }
+                }
+            };
+            
+            state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.END_CALL, endData, (response) => {
+                if (response.status === 'success') {
+                    addStatusMessage(`Call ended, duration: ${formatTime(duration)}`, 'info');
+                    resetCallState();
+                } else {
+                    addStatusMessage(`Failed to end call: ${response.message}`, 'error');
+                }
+            });
+        });
+
+        // Toggle Audio
+        elements.toggleAudioBtn.addEventListener('click', () => {
+            if (state.localStream) {
+                const audioTrack = state.localStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioTrack.enabled = !audioTrack.enabled;
+                    elements.toggleAudioBtn.innerText = audioTrack.enabled ? 'Mute' : 'Unmute';
+                    
+                    // Send media state update to server
+                    state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.UPDATE_MEDIA_STATE, {
+                        sessionId: state.currentCall.sessionId,
+                        senderEmail: elements.senderEmail.value,
+                        receiverEmail: state.currentCall.receiver || state.currentCall.caller,
+                        mediaState: {
+                            audio: audioTrack.enabled
+                        }
+                    }, (response) => {
+                        if (response.status === 'success') {
+                            addStatusMessage(`Microphone ${audioTrack.enabled ? 'unmuted' : 'muted'}`, 'info');
+                        } else {
+                            addStatusMessage(`Failed to update audio state: ${response.message}`, 'error');
+                        }
+                    });
+                }
+            }
+        });
+
+        // Toggle Video
+        elements.toggleVideoBtn.addEventListener('click', async () => {
+            try {
+                // If no video track exists yet but call is video type, try to get one
+                if (state.localStream && state.currentCall.callType === 'VIDEO' && 
+                    state.localStream.getVideoTracks().length === 0) {
+                    
+                    // Request camera permission
+                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const videoTrack = videoStream.getVideoTracks()[0];
+                    
+                    // Add to existing stream
+                    state.localStream.addTrack(videoTrack);
+                    elements.localVideo.srcObject = state.localStream;
+                    
+                    // Send to peers if connected
+                    if (state.peer) {
+                        const allPeerConnections = state.peer.connections;
+                        for (const peerConn of Object.values(allPeerConnections)) {
+                            for (const connection of peerConn) {
+                                connection.peerConnection.addTrack(videoTrack, state.localStream);
+                            }
+                        }
+                    }
+                }
+                
+                // Now toggle the video track
+                const videoTrack = state.localStream?.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.enabled = !videoTrack.enabled;
+                    elements.toggleVideoBtn.innerText = videoTrack.enabled ? 'Hide Video' : 'Show Video';
+                    
+                    // Send media state update to server
+                    state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.UPDATE_MEDIA_STATE, {
+                        sessionId: state.currentCall.sessionId,
+                        senderEmail: elements.senderEmail.value,
+                        receiverEmail: state.currentCall.receiver || state.currentCall.caller,
+                        mediaState: {
+                            video: videoTrack.enabled
+                        }
+                    }, (response) => {
+                        if (response.status === 'success') {
+                            addStatusMessage(`Camera ${videoTrack.enabled ? 'enabled' : 'disabled'}`, 'info');
+                        } else {
+                            addStatusMessage(`Failed to update video state: ${response.message}`, 'error');
+                        }
+                    });
+                } else {
+                    addStatusMessage('No video track available', 'error');
+                }
+            } catch (error) {
+                addStatusMessage(`Error toggling video: ${error.message}`, 'error');
+            }
+        });
+
+        // Upgrade to Video Call
+        elements.upgradeToVideoBtn.addEventListener('click', async () => {
+            if (!state.currentCall.sessionId) {
+                addStatusMessage('No active call to upgrade', 'error');
+                return;
+            }
+            
+            try {
+                // Request video permissions
+                const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoTrack = videoStream.getVideoTracks()[0];
+                const audioTrack = state.localStream.getAudioTracks()[0];
+                
+                // Add video track to existing stream
+                if (state.localStream) {
+                    state.localStream.addTrack(videoTrack);
+                    
+                    // Update local video element
+                    elements.localVideo.srcObject = state.localStream;
+                    addStatusMessage('Added local video track', 'success');
+                    
+                    // For the call initiator, we need to create a new call to the recipient
+                    // with the updated stream that includes video
+                    if (state.peer) {
+                        addStatusMessage('Recreating peer connection with video', 'info');
+                        
+                        // Create a new call to the recipient
+                        const receiverId = state.currentCall.caller === elements.senderEmail.value ? 
+                            state.currentCall.peerId : state.currentCall.caller;
+                        
+                        const call = state.peer.call(receiverId, state.localStream);
+                        state.call = call;
+                        
+                        call.on('stream', (remoteStream) => {
+                            addStatusMessage('Received remote stream after upgrade', 'success');
+                            elements.remoteVideo.srcObject = remoteStream;
+                            state.remoteStream = remoteStream;
+                        });
+                        
+                        call.on('error', (err) => {
+                            addStatusMessage(`Call error after upgrade: ${err}`, 'error');
+                        });
+                    }
+                } else {
+                    addStatusMessage('No local stream exists, creating new one', 'info');
+                    state.localStream = videoStream;
+                    elements.localVideo.srcObject = videoStream;
+                }
+                
+                // Send upgrade request
+                state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.UPGRADE_CALL_TYPE, {
+                    sessionId: state.currentCall.sessionId,
+                    senderEmail: elements.senderEmail.value,
+                    receiverEmail: state.currentCall.caller === elements.senderEmail.value ? 
+                        state.currentCall.receiver : state.currentCall.caller,
+                    newCallType: 'VIDEO'
+                }, (response) => {
+                    if (response.status === 'success') {
+                        addStatusMessage('Call upgraded to video', 'success');
+                        elements.upgradeToVideoBtn.classList.add('hidden');
+                        elements.toggleVideoBtn.classList.remove('hidden');
+                        state.currentCall.callType = 'VIDEO';
+
+                        state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.UPDATE_MEDIA_STATE, {
+                        sessionId: state.currentCall.sessionId,
+                        senderEmail: elements.senderEmail.value,
+                        receiverEmail: state.currentCall.caller === elements.senderEmail.value ? 
+                            state.currentCall.receiver : state.currentCall.caller,
+                        mediaState: {
+                            audio: audioTrack ? audioTrack.enabled : true,
+                            video: true
+                        }
+                    });
+                    } else {
+                        addStatusMessage(`Failed to upgrade call: ${response.message}`, 'error');
+                    }
+                });
+            } catch (error) {
+                addStatusMessage(`Error upgrading to video: ${error.message}`, 'error');
+            }
+        });
+
+        // Handle screen share button
+        elements.shareScreenBtn.addEventListener('click', async () => {
+            if (!state.currentCall.sessionId) {
+                addStatusMessage('No active call to share screen in', 'error');
+                return;
+            }
+            
+            try {
+                // Request screen sharing permissions
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        cursor: 'always',
+                        displaySurface: 'monitor', // Try to capture entire screen
+                        logicalSurface: true,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: false
+                });
+
+                // Add the track quality check right here
+                const videoTrack = screenStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    const settings = videoTrack.getSettings();
+                    addStatusMessage(`Captured screen: ${settings.width}x${settings.height} @ ${settings.frameRate}fps`, 'info');
+                }
+                
+                addStatusMessage('Screen sharing started locally', 'success');
+                
+                // Show the screen in our own UI
+                elements.screenShareVideo.srcObject = screenStream;
+                document.querySelector('.screen-share').classList.remove('hidden');
+                
+                // Add listeners for when user stops sharing via browser UI
+                screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                    stopScreenSharing();
+                });
+                
+                // Notify server about screen sharing - don't send screenShareId, server will generate it
+                state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.START_SCREEN_SHARE, {
+                    sessionId: state.currentCall.sessionId,
+                    senderEmail: elements.senderEmail.value,
+                    receiverEmail: state.currentCall.caller === elements.senderEmail.value ? 
+                        state.currentCall.receiver : state.currentCall.caller
+                }, (response) => {
+                    if (response.status === 'success') {
+                        // Use the server-generated screenShareId
+                        const screenShareId = response.screenShareId;
+                        addStatusMessage(`Screen share started with ID: ${screenShareId}`, 'success');
+                        
+                        // Now that we have the ID from the server, create the peer connection
+                        if (state.peer) {
+                            // Create a specific PeerJS call for screen sharing
+                            const receiverPeerId = state.currentCall.caller === elements.senderEmail.value ? 
+                                state.currentCall.peerId : state.currentCall.caller.replace(/[@.]/g, '_') + '_' + Date.now();
+
+                            addStatusMessage(`Creating screen share PeerJS call to: ${receiverPeerId}`, 'info');
+
+                            // Create a dedicated call with specific metadata
+                            const screenCall = state.peer.call(receiverPeerId, screenStream, {
+                                metadata: {
+                                    type: 'screen',
+                                    sender: elements.senderEmail.value,
+                                    screenShareId: screenShareId
+                                }
+                            });
+
+                            // Store the screen call
+                            screenSharePeer = screenCall;
+
+                            screenCall.on('stream', (remoteStream) => {
+                                addStatusMessage('Screen share peer received stream acknowledgment', 'success');
+                            });
+
+                            screenCall.on('error', (err) => {
+                                addStatusMessage(`Screen share peer error: ${err.message}`, 'error');
+                            });
+
+                            // Update locally
+                            document.getElementById('screenShareUser').textContent = elements.senderEmail.value;
+                        }
+                        
+                        // Update UI
+                        elements.shareScreenBtn.classList.add('hidden');
+                        elements.stopScreenShareBtn.classList.remove('hidden');
+                        
+                    } else {
+                        addStatusMessage(`Failed to start screen share: ${response.message}`, 'error');
+                        stopScreenSharing();
+                    }
+                });
+                
+            } catch (error) {
+                addStatusMessage(`Error starting screen share: ${error.message}`, 'error');
+            }
+        });
+
+        // Handle stop screen share button
+        elements.stopScreenShareBtn.addEventListener('click', () => {
+            stopScreenSharing();
+        });
+
+        // Function to stop screen sharing
+        function stopScreenSharing() {
+            addStatusMessage('Stopping screen sharing...', 'info');
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+            }
+            
+            if (screenSharePeer) {
+                screenSharePeer.close();
+                screenSharePeer = null;
+            }
+            
+            // Hide screen share video
+            elements.screenShareVideo.srcObject = null;
+            elements.screenShareVideo.classList.remove('active-stream');
+            document.querySelector('.screen-share').classList.add('hidden');
+            
+            // Update UI
+            elements.shareScreenBtn.classList.remove('hidden');
+            elements.stopScreenShareBtn.classList.add('hidden');
+            
+            // Notify server
+            state.socket.emit(EVENTS.PERSONAL_CALL.CLIENT.STOP_SCREEN_SHARE, {
+                sessionId: state.currentCall.sessionId,
+                senderEmail: elements.senderEmail.value,
+                receiverEmail: state.currentCall.caller === elements.senderEmail.value ? 
+                    state.currentCall.receiver : state.currentCall.caller
+            }, (response) => {
+                if (response.status === 'success') {
+                    addStatusMessage('Screen sharing stopped on server', 'success');
+                }
+            });
+        }
+
+        document.getElementById('debugPlayBtn').addEventListener('click', async () => {
+            const video = elements.screenShareVideo;
+            
+            addStatusMessage('Attempting to force play screen share...', 'info');
+            
+            // Check if we have a valid stream
+            if (!video.srcObject) {
+                addStatusMessage('No stream attached to screen share video', 'error');
+                
+                // Check if we can get the stream directly
+                if (screenStream && screenStream.active) {
+                    addStatusMessage('Found active screen stream locally, trying to use it', 'info');
+                    video.srcObject = screenStream;
+                } else {
+                    // Try to get screen from remote peer
+                    try {
+                        const newStream = await navigator.mediaDevices.getDisplayMedia({video: true});
+                        video.srcObject = newStream;
+                        addStatusMessage('Created new screen stream for debugging', 'info');
+                    } catch (e) {
+                        addStatusMessage(`Failed to create debug stream: ${e.message}`, 'error');
+                        return;
+                    }
+                }
+            }
+            
+            // Log video element state
+            const trackInfo = video.srcObject?.getTracks().map(t => 
+                `${t.kind} (${t.readyState}, enabled: ${t.enabled})`).join(', ') || 'no tracks';
+            
+            addStatusMessage(`Video state: readyState=${video.readyState}, paused=${video.paused}, tracks=${trackInfo}`, 'info');
+            
+            // Force play
+            try {
+                await video.play();
+                addStatusMessage('Force play succeeded! Screen should be visible now', 'success');
+                video.style.border = '3px solid green';
+            } catch (e) {
+                addStatusMessage(`Force play failed: ${e.message}`, 'error');
+            }
+        });
+    </script>
+</body>
+</html>
