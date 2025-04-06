@@ -408,7 +408,7 @@
                 addStatusMessage('PeerJS already initialized', 'info');
                 return;
             }
-            state.peerId = `${elements.senderEmail.value.replace(/[@.]/g, '_')}_${Date.now()}`;
+            state.peerId = `${elements.senderEmail.value.replace(/[@.+]/g, '_')}_${Date.now()}`;
             
             state.peer = new Peer(state.peerId, {
                 host: 'peer-server.mapis4u.com',
